@@ -1,0 +1,193 @@
+---
+title: "EDA on Airline Twitter Dataset"
+author: "Abhinav Singh, MIT"
+output:
+  word_document: default
+  html_document:
+    fig_height: 4.5
+    fig_width: 7
+    highlight: tango
+    number_sections: yes
+    theme: readable
+---
+
+#Exploratory Data Analysis
+
+
+```{r include=FALSE}
+library.warn <- library
+library <- function(package, help, pos = 2, lib.loc = NULL, character.only = FALSE,
+  logical.return = FALSE, warn.conflicts = TRUE, quietly = FALSE,
+  verbose = getOption("verbose")) {
+  if (!character.only) {
+    package <- as.character(substitute(package))
+  }
+
+  suppressPackageStartupMessages(library.warn(
+    package, help, pos, lib.loc, character.only = TRUE,
+    logical.return, warn.conflicts, quietly, verbose))}
+```
+
+```{r, message = FALSE}
+library(readr) # CSV file I/O, e.g. the read_csv function
+library(dplyr)
+library(GGally)
+library(maps)
+library(ggplot2)
+library(gridExtra)
+tweets <- read_csv('E:/documents/CourseWork/FODS/Tweets_Final.csv')
+str(tweets)
+```
+
+The dataset contains 14640 tweets and 19 variables (columns).
+
+##Summary Statistics
+
+```{r} 
+summary(tweets)
+```
+
+The above command basically gives the summary statistics of the whole data. From the above output I can ignore, statistics of column `tweetID` since it is ID's linked to the user who wrote the tweets. Statitics related to these can be ignored. Categorical variables like `airline_sentiment`, `negativereason`, `airline`, etc. shows the counts of columns related to that particular category. Using this I can see the number of tweets per airline, tweets sentiment classification and location based tweets.
+
+##Columns containing NAs (no data)
+
+```{r} 
+data <- tweets
+data = as.data.frame(apply(data, 2, function(x) gsub("^$|^ $", NA, x)))
+apply(data, 2, function(x) sum(is.na(x)))
+```
+
+The `apply` command just checks which columns contain NA as well as returns the count of the same. `Airline_sentiment_gold` and `nevative_reason_gold` are mostly empty columns, i.e., they contain no information. So I can get rid of that.
+
+##ReTweet Analysis
+
+```{r}
+table(data$retweet_count)
+```
+I can see that most of the tweets are actually not retweeted. A very tiny fraction of them (640/14640) are tweeted only once. However, 4 tweets have been retweeted 44, 32, 31 and 28 times. Let's have a look and see why they say.
+
+```{r thecode, eval=FALSE}
+as.character(subset(data, retweet_count ==44)$tweettext);
+as.character(subset(data, retweet_count ==32)$tweettext);
+as.character(subset(data, retweet_count ==31)$tweettext);
+as.character(subset(data, retweet_count ==28)$tweettext)
+```
+
+```{r thecode, echo=FALSE, warning=FALSE, message=FALSE}
+```
+
+The first 2 tweets show clear anger directed to US Airways. There was a substantial delay in the flight according to the first tweet, however the reason is not clear in the second tweet. The third tweet is directed towards Delta, although it is not clear what the message is. Being the curator of the dataset, I have identified this tweet as negative, because of the use of the word **fleek** which has negative polarity as per english dictionary. Finally, the fourth tweet is also targeted towards US Airways, the sentiment is neutral according to the me, because this is targeted towards the Airline company or it's officials(check **livery** definition).
+
+##Tweet location exploration
+
+```{r}
+head(unique(data$tweet_location), 50)
+```
+
+It would have been useful to know the location of the tweets to determine if certain areas are more prone to tweet, or to have one sentiment or the other.
+
+##Tweet Timezone Analysis
+
+```{r}
+timezone = as.data.frame(prop.table(table(data$user_timezone)))
+colnames(timezone) = c('timezone', 'Frequency')
+timezone = timezone[order(timezone$Frequency, decreasing = TRUE),]
+dim(timezone)
+head(timezone, 10)
+```
+
+I found the great majority of tweets coming from Eastern Time zone, and almost all the tweets come from US & Canada time zone.
+
+##Visualisation on maps
+```{r}
+location = data$tweet_coord
+location = location[complete.cases(location)] # remove NAs
+location = as.data.frame(location)
+location$count = 1 # add count columns full of 1s
+location$location = as.character(location$location)
+# remove duplicate coordinates, and count the times they appear in count column
+location = aggregate(count ~ location, data = location, FUN = sum)
+location = location[-5,]
+coords = strsplit(location$location, ",") # coords are [0,0] which is probably wrong
+
+# separate lat and long
+lat = NULL
+long = NULL
+for (i in 1:length(coords) ) {
+  lat = c(lat, substring(coords[[i]][1], 2)) # removes first character [
+  long = c(long, coords[[i]][2])
+}
+location$lat = lat
+location$long = long
+
+# remove ]
+location$long = substr(location$long,1,nchar(location$long)-1)
+
+location$lat = as.numeric(location$lat)
+location$long = as.numeric(location$long)
+
+head(location)
+dim(location)
+```
+
+Final plot on the world and USA Map
+
+```{r, message=FALSE, warning=FALSE}
+world_map <- map_data("world")
+g1 = ggplot()
+g1 = g1 + geom_polygon(data=world_map, aes(x=long, y=lat, group = group), colour="black", fill = 'lightblue') + 
+  ggtitle("Location of tweets across the World")
+g1 = g1 + geom_point(data=location, aes(x=long, y=lat), color="coral1")
+g1 = g1 + ylim(-50, 80)
+
+states <- map_data("state")
+g2 = ggplot()
+g2 =g2 + geom_polygon(data=states, aes(x=long, y=lat, group = group), colour="black", fill = 'lightblue') + 
+  ggtitle("Location of tweets across US")
+g2 = g2 + geom_point(data=location, aes(x=long, y=lat), color="coral1")
+g2 = g2 + xlim(-125, -65) + ylim(25, 50)
+
+grid.arrange(g1, g2, ncol=1, nrow = 2)
+```
+
+##External Data Source Validation
+```{r}
+T1 <- data %>% 
+  select(airline_sentiment, airline, negativereason, airline_sentiment_confidence) 
+
+Sentiment <- T1 %>% 
+  group_by(airline, airline_sentiment) %>%
+  summarise(count=n()) %>% 
+  mutate(Percentage=round(count/sum(count)*100,1))
+
+#Overall sentiment towards airlines
+ggplot(Sentiment, aes(airline, Percentage)) +
+  geom_bar(stat="identity", aes(fill=airline_sentiment)) +
+  facet_wrap(~airline_sentiment, nrow = 3) +
+  coord_flip() +
+  scale_fill_manual(name = "", values = c("#FF715B", "#1E91D6", "#60993E")) +
+  theme_minimal() +
+  theme(panel.grid.major.y = element_blank(),
+        panel.grid.minor.x = element_blank(),
+        panel.grid.minor.y = element_blank())+
+  ggtitle("Airlines Sentiment from Twitter") +
+  theme(legend.position="none")
+```
+
+The above graph shows distribution of tweets for a particular airline based on the tweets sentiment polarity with respect to the 6 different airlines. From this [CNN](http://www.cnn.com/2016/04/04/aviation/airline-quality-rating-united-states-carriers/) link, I can see that Virgin America is number one and American is ranked lowest. As per my tweet dataset and sentiment analysis, I can see that Virgin America has most number of positive tweets and American has most negative number of tweets. US airways has the most negative tweets but, after 2015 as per this [Wiki](https://en.wikipedia.org/wiki/US_Airways) US Airways and American became one single carrier. Hence, the twitter data seems accurate.
+
+
+## Conclusions
+
+I conducted exploratory data analysis to understand and get familiar with the data at hand. I found that:
+
+* Most tweets have negative sentiment (> 60%).
+* Most tweets are targeted towards United, followed by American and US Airways.
+* Virgin American receives very few tweets.
+* Most of the tweets targeted towards American, United and US Airways contain negative sentiment.
+* Tweets targeted to Delta, Virgin and Southwest contain roughly similar proportion of negative, neutral and positive sentiment.
+* Main reasons for negative sentiment are Customer Service Issues and Late Flights.
+* Negative sentiment tweets towards Delta are based mostly on late flights and not so much on Customer Service Issues as for the rest of the airlines.
+* Most tweets are not re-tweeted.
+* Most tweets come from US & Canada time zone
+* Most tweets come from the States.
