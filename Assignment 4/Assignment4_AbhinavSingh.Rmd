@@ -1,0 +1,185 @@
+---
+title: "Sentiment by Audience & Tweet Length"
+author: "Abhinav Singh"
+output:
+  html_document:
+    fig_height: 4.5
+    fig_width: 7
+    highlight: tango
+    number_sections: yes
+    theme: readable
+  word_document: default
+---
+
+# Introduction
+
+In this script, I aim to test a couple of hypotheses. The first is that **the more addresses in a tweet, the harsher(negatively polarized) its words**. I do this by first counting the number of `@` symbols in the text of each tweet. I then show a few visualizations to investigate my theory further. Maybe it depends on the airline? My second hypothesis is that **longer tweets are also less likely to contain favorable language**. 
+
+## Read in the data and inspect
+```{r, message = FALSE}
+# Load packages
+library('readr')    # read files
+library('ggplot2')  # visualization
+library('ggthemes') # visualization
+library('dplyr')    # data manipulation
+library('stringr')  # text manipulation
+
+tweets <- read_csv('E:/documents/CourseWork/FODS/Tweets_Final.csv')
+
+str(tweets)
+```
+
+Looking good to me. Moving on...
+
+# Preparing the data
+
+I use the `stringr` package to count the number of `@` symbols in the tweet. Of course if there is only one, then it is the airline. I also use the same package to count the number of characters used in the tweet where the maximum length should be **170**(Supposition). 
+
+```{r}
+# Create a variable holding the number of `@` characters in each tweet
+tweets$at_count <- sapply(tweets$tweettext, function(x) str_count(x, '@'))
+
+maxAt <- max(tweets$at_count)
+
+# Collapse number of 'ats'that are 
+tweets$at_countD[tweets$at_count == 1] <- '1'
+tweets$at_countD[tweets$at_count == 2] <- '2'
+tweets$at_countD[tweets$at_count %in% c(3:maxAt)] <- '3+'
+
+# Change to a factor variable
+tweets$at_countD <- factor(tweets$at_countD)
+
+# Store the length of each tweet
+tweets$text_length <- sapply(tweets$tweettext, function(x) nchar(x))
+```
+
+## Preliminary visual inspection
+
+I will start with the `@`s and then dive into the tweet lengths.
+
+```{r}
+# Getting my sentiment colors & breaks ready.
+sentPlt     <- c('#f93822','#fedd00','#27e833')
+sentBreaks  <- c('positive','neutral','negative')
+
+# Visualize distribution of `@` counts
+ggplot(tweets, aes(x = at_count)) + 
+  geom_density(fill = '#99d6ff', alpha=0.4) +
+  labs(x = 'Number of @s') +
+  theme_few() +
+  theme(text = element_text(size=12))
+
+# Show counts
+table(tweets$at_countD)
+```
+
+The number of `@`s follows a poisson distribution. I bucketed it up into 1, 2, and 3 + though since so few have 3 or more `@`s --- only using this `r nrow(tweets[tweets$at_countD == '3+', ])`. 
+
+```{r, message=FALSE, warning=FALSE}
+# Visualize distribution of tweet length by sentiment
+ggplot(tweets, aes(x = text_length, 
+    fill = airline_sentiment)) + 
+  geom_density(alpha = 0.2) +
+  scale_fill_manual(name   = 'Tweet\nSentiment',
+                    values = sentPlt,
+                    breaks = sentBreaks) +
+  geom_vline(xintercept = 170, 
+    lwd=1, lty = 'dashed') +
+  labs(x = 'Tweet Length') +
+  theme_few() +
+  theme(text = element_text(size=12))
+```
+
+Why are some tweets longer than 170 characters? Really unsure what's going on?
+
+```{r}
+# Found the culprits: only four tweets
+nrow(tweets[tweets$text_length > 170, ])
+
+# Print them to console to inspect
+tweets[tweets$text_length > 170, ]$text
+```
+
+I see --- two of them are evidently longer than 170 characters. One of them has an ampersand character, but I'm not sure what's going on with the other one. I'm going to just replace their text lengths with `NA` for now and if required work on that later.
+
+```{r, message=FALSE, warning=FALSE}
+# Set those extra-long tweets to NA
+tweets$text_length[tweets$text_length > 170] <- NA
+
+# Visualize distribution of tweet length by sentiment again
+ggplot(tweets, aes(x = text_length, 
+    fill = airline_sentiment)) + 
+  geom_density(alpha = 0.2) +
+  scale_fill_manual(name   = 'Tweet\nSentiment',
+                    values = sentPlt,
+                    breaks = sentBreaks) +
+  geom_vline(xintercept = 170, 
+    lwd=1, lty = 'dashed') +
+  labs(x = 'Tweet Length') +
+  theme_few() +
+  theme(text = element_text(size=12))
+```
+
+Looks really better now.
+
+# Deeper analysis
+
+Now that things are more or less in order, let's take a closer look at testing these two hypotheses. The first one, again, is that **angrier tweets have more `@` symbols** meaning discontent Twitter users want an audience for their displeasure. While we're at it, we can see if the airline makes a difference.
+
+## Part 1
+
+```{r, message=FALSE, warning=FALSE}
+# Visualize proportions of positive, neutral, and negative
+# sentiment tweets by number of @ symbols used
+ggplot(tweets, aes(x = at_countD, fill = airline_sentiment)) + 
+  geom_bar(position = 'fill', colour = 'black') +
+  scale_fill_manual(name   = 'Tweet\nSentiment',
+                    values = sentPlt,
+                    breaks = sentBreaks) +
+  labs(x = 'Number of @s', y = 'Proportion') +
+  theme_few() +
+  theme(text = element_text(size=12))
+```
+
+Looks like my hypothesis is not quite holding. While tweets containing 1, 2, and 3+ `@` symbols have roughly the same proportion of positive tweets, the negativity goes down and neutrality goes up. Thus, I would guess, is because the ratio of useful text to perform sentiment analysis is decreasing as the number of addressees in the text increases resulting in greater uncertainty/neutrality. 
+
+Considering the **airline** itself as a variable.
+
+```{r, message=FALSE, warning=FALSE}
+# Visualize the same plot as before but add airline
+ggplot(tweets, aes(x = at_countD, fill = airline_sentiment)) + 
+  geom_bar(position = 'fill', colour = 'black') +
+  facet_wrap(~airline) +
+  scale_fill_manual(name   = 'Tweet\nSentiment',
+                    values = sentPlt,
+                    breaks = sentBreaks) +
+  labs(x = 'Number of @s', y = 'Proportion') +
+  theme_few() +
+  theme(text = element_text(size=12))
+```
+
+The overall relationship does not appear to be borne out, especially keeping in mind that cell counts are low for 3+ `@` symbols. 
+
+## Part 2
+
+I'm ready to move on to looking at **tweet length** as our variable of interest. As we saw before, it appeared that the distribution of negative sentiment tweets was shifted rightward towards longer tweets in comparison to neutral and positive distributions. What does it look like for the six airlines?
+
+```{r, message=FALSE, warning=FALSE}
+ggplot(tweets, aes(x = text_length, 
+    fill = airline_sentiment)) + 
+  geom_density(alpha = 0.2) +
+  facet_wrap(~airline, scale = 'free') +
+  scale_fill_manual(name   = 'Tweet\nSentiment',
+                    values = sentPlt,
+                    breaks = sentBreaks) +
+  labs(x = 'Tweet Length') +
+  theme_few() +
+  theme(text = element_text(size=12))
+```
+
+
+# Conclusion
+
+We see that negative tweets tend to be considerably longer than positive or neutral ones. In fact, it's interesting to see that ceiling effect of the 170 character limit among tweets directed at Virgin America. Something's seriously wrong with their services.
+
+---
