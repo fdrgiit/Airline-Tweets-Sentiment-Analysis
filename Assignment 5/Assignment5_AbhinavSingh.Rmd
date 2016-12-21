@@ -1,0 +1,134 @@
+---
+title: "SQL Queries"
+author: "Abhinav Singh"
+output:
+  html_document:
+    fig_height: 4.5
+    fig_width: 7
+    highlight: tango
+    number_sections: yes
+    theme: readable
+  word_document: default
+---
+
+# Introduction
+
+Below are some of the sql excerpt on my dataset to depict some additional insights. 
+
+## Read in the data and inspect
+```{r, message=FALSE, warning=FALSE}
+# Load packages
+library(sqldf)
+library(knitr)
+
+Tweets<- read.csv("E:/documents/CourseWork/FODS/Tweets_Final.csv")
+```
+
+Looking good to me. Moving on...
+
+### COUNT
+
+Below query displays the percentage distribution of Sentiment By Airline. 
+
+```{r results = 'asis', message=FALSE, warning=FALSE}
+results=sqldf('SELECT airline as Airline, COUNT(airline) as "Tweets Count", 
+              100.0*SUM(CASE WHEN airline_sentiment="negative" THEN 1 ELSE 0 END) / COUNT(airline) as "% Negative", 
+              100.0*SUM(CASE WHEN airline_sentiment="neutral"  THEN 1 ELSE 0 END) / COUNT(airline) as "% Neutral", 
+              100.0*SUM(CASE WHEN airline_sentiment="positive" THEN 1 ELSE 0 END) / COUNT(airline) as "% Positive" 
+              FROM Tweets 
+              GROUP BY airline 
+              ORDER BY 100.0*SUM(CASE WHEN airline_sentiment="negative" THEN 1 ELSE 0 END) / COUNT(airline) DESC')
+kable(results, digits = 2, align = c(rep("l", 4), rep("c", 4), rep("r", 4)))
+```
+
+### GROUP BY
+
+Below query displays the overall count of Sentiment classification in the dataset.
+
+```{r results = 'asis', message=FALSE, warning=FALSE}
+results2=sqldf('SELECT airline_sentiment as "Sentiment Type",
+       COUNT(airline_sentiment) as "Tweets Count"
+               FROM Tweets
+               GROUP BY airline_sentiment
+               ORDER BY COUNT(airline_sentiment) DESC')
+kable(results2, digits = 2, align = c(rep("l", 4), rep("c", 4), rep("r", 4)))
+```
+
+### ORDER BY
+
+Below query displays all the possible negative reasoning distribution by Airline. The column **negativereason** was derived while performing sentiment classification  and the negative words from the tweets were captured and put it in this column.
+
+```{r results = 'asis', message=FALSE, warning=FALSE}
+results3=sqldf('SELECT airline as Airline,
+       negativereason as "Negative Reason",
+               COUNT(negativereason) as "Tweets Count"
+               FROM Tweets
+               GROUP BY airline,
+               negativereason
+               ORDER BY COUNT(negativereason) DESC')
+
+kable(results3, digits = 2, align = c(rep("l", 4), rep("c", 4), rep("r", 4)))
+```
+
+### JOIN
+
+Below query displays the count of negative and Positive Tweets distrubtion based on Airline
+
+```{r results = 'asis', message=FALSE, warning=FALSE}
+results4=sqldf('SELECT pos.airline as Airline, count(tweetID) as "Negative Tweet Count", pos.positive_count as "Positive Tweet Count"
+FROM Tweets inner join 
+(
+SELECT count(tweetID) as positive_count, airline
+FROM Tweets
+where airline_sentiment = "positive"
+group by airline
+order by count(tweetID) desc
+) pos
+on Tweets.airline = pos.airline
+where airline_sentiment = "negative"
+group by Tweets.airline
+order by count(tweetID) desc')
+
+kable(results4, digits = 2, align = c(rep("l", 4), rep("c", 4), rep("r", 4)))
+```
+
+### AVG
+
+Below query displays some statistics related to tweet length and tweet words in the dataset.
+
+```{r results = 'asis', message=FALSE, warning=FALSE}
+result=sqldf('SELECT MIN(numberofcharacters) as "Min Tweet Length", 
+MAX(numberofcharacters) as "Max Tweet Length", 
+AVG(numberofcharacters) as "Avg Tweet Length",
+MIN(numberofwords) as "Min Tweet Words", 
+MAX(numberofwords) as "Max Tweet Words", 
+AVG(numberofwords) as "Avg Tweet Words"
+FROM Tweets')
+
+kable(result, digits = 2, align = c(rep("l", 4), rep("c", 4), rep("r", 4)))
+```
+
+### MIN
+
+Below query displays tweet with the minimum, maximum and average length
+
+```{r results = 'asis', message=FALSE, warning=FALSE}
+resu=sqldf('SELECT DISTINCT numberofcharacters as "Tweet Length", tweettext as "Tweet"
+             FROM Tweets
+            where (numberofcharacters = (SELECT MIN(numberofcharacters) FROM Tweets)
+            OR
+            numberofcharacters = (SELECT MAX(numberofcharacters) FROM Tweets)
+            OR
+            numberofcharacters = (Select cast(AVG(numberofcharacters) as integer) FROM Tweets)
+            )
+            group by numberofcharacters
+            ')
+
+kable(resu, digits = 2, align = c(rep("l", 4), rep("c", 4), rep("r", 4)))
+```
+
+# Conclusion
+
+I see that positive tweet count is less compared to neutral as well as negative frequencies. Also as per the above tabular results we see that Virgin America is number one and American is ranked lowest which is based solely on the distribution of positive tweets and negative tweets out of the total per airline.  From this [CNN](http://www.cnn.com/2016/04/04/aviation/airline-quality-rating-united-states-carriers/) link, I can see that Virgin America is number one and American is ranked lowest. US airways has the most negative tweets but, after 2015 as per this [Wiki](https://en.wikipedia.org/wiki/US_Airways) US Airways and American became one single carrier. Hence, the twitter data seems pretty accurate.
+
+---
